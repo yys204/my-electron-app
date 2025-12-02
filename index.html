@@ -1,30 +1,162 @@
-<!-- 这是一个简单的 HTML -->
-<style>
-  body { background: #fff7d1; margin: 0; overflow: hidden; }
-  textarea { 
-    width: 100%; height: 100vh; 
-    background: transparent; border: none; resize: none; outline: none; 
-    padding: 10px; font-size: 16px; font-family: sans-serif;
-  }
-  .drag-area { height: 20px; -webkit-app-region: drag; cursor: move; }
-</style>
+<!DOCTYPE html>
+<html>
 
-<!-- 顶部拖拽区 -->
-<div class="drag-area"></div>
-<textarea id="note-area" placeholder="写点什么..."></textarea>
+<head>
+  <meta charset="UTF-8">
+  <title>便签</title>
+  <!-- 1. 引入 Markdown 解析库 (CDN方式，不需要 npm install) -->
+  <script src="./libs/marked.min.js"></script>
+  <style>
+    /* 样式保持你原来的即可，这里为了演示简单写一下 */
+    body {
+      margin: 0;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+      font-family: sans-serif;
+    }
 
-<script>
-  // 引入 electron-store (需要先 npm install electron-store)
-  const Store = require('electron-store');
-  const store = new Store();
+    .drag-area {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 20px;
+      -webkit-app-region: drag;
+      z-index: 10;
+    }
 
-  const textarea = document.getElementById('note-area');
+    #editor {
+      width: 50%;
+      height: 100%;
+      border: none;
+      outline: none;
+      background: #f9f9f9;
+      padding: 30px 10px 10px;
+      resize: none;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
 
-  // 1. 加载时：从硬盘读取数据
-  textarea.value = store.get('my_note_data') || '';
+    #preview {
+      width: 50%;
+      height: 100%;
+      background: #fff;
+      padding: 30px 10px 10px;
+      overflow-y: auto;
+      box-sizing: border-box;
+      border-left: 1px solid #ddd;
+    }
 
-  // 2. 输入时：自动保存 (建议加防抖)
-  textarea.addEventListener('input', () => {
-    store.set('my_note_data', textarea.value);
-  });
-</script>
+    /* 1. 自定义标题栏容器 */
+    .title-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 30px;
+      display: flex;
+      justify-content: flex-end;
+      /* 按钮靠右 */
+      z-index: 999;
+    }
+
+    /* 2. 拖拽区域：占据除了按钮以外的空间 */
+    .drag-region {
+      flex-grow: 1;
+      -webkit-app-region: drag;
+      /* 这行代码让这个区域可以拖拽窗口 */
+    }
+
+    /* 3. 关闭按钮样式 */
+    .close-btn {
+      width: 30px;
+      height: 30px;
+      line-height: 30px;
+      text-align: center;
+      cursor: pointer;
+      font-family: sans-serif;
+      color: #666;
+      font-size: 20px;
+      -webkit-app-region: no-drag;
+      /* 关键！必须设为 no-drag，否则点不到它 */
+      transition: background 0.2s;
+    }
+
+    .close-btn:hover {
+      background: #ff5f57;
+      /* 模仿 macOS 的关闭红色 */
+      color: white;
+    }
+
+    /* 调整一下原来的编辑器和预览区的 padding，给顶部留出空间 */
+    #editor,
+    #preview {
+      padding-top: 40px;
+      /* 避开顶部的按钮 */
+    }
+  </style>
+</head>
+
+<body>
+  <!-- 顶部自定义标题栏 -->
+  <div class="title-bar">
+    <!-- 拖拽区：按住这里移动窗口 -->
+    <div class="drag-region"></div>
+    <!-- 关闭按钮 -->
+    <div class="close-btn" id="close-btn">×</div>
+  </div>
+
+  <textarea id="editor" placeholder="..."></textarea>
+  <div id="preview"></div>
+
+  <script>
+    const editor = document.getElementById('editor');
+    const preview = document.getElementById('preview');
+    const closeBtn = document.getElementById('close-btn');
+    // 监听关闭按钮点击事件
+    closeBtn.addEventListener('click', () => {
+      // 呼叫 preload.js 里的 hideWindow
+      window.electronAPI.hideWindow();
+    });
+    // ------------------------------------------------
+    // 核心逻辑 1：窗口加载时，读取本地文件
+    // ------------------------------------------------
+    window.onload = async () => {
+      // 呼叫 preload.js 里的 readNote
+      const content = await window.electronAPI.readNote();
+
+      // 把读到的内容填进输入框
+      editor.value = content || '';
+
+      // 同时也更新一下右侧预览
+      updatePreview(editor.value);
+    };
+
+    // ------------------------------------------------
+    // 核心逻辑 2：输入时自动保存
+    // ------------------------------------------------
+    let timer;
+    editor.addEventListener('input', (e) => {
+      const text = e.target.value;
+
+      // 1. 实时更新预览
+      updatePreview(text);
+
+      // 2. 防抖保存（停止输入 500ms 后才写硬盘，保护硬盘）
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        // 呼叫 preload.js 里的 saveNote
+        window.electronAPI.saveNote(text);
+        console.log('已触发保存');
+      }, 500);
+    });
+
+    function updatePreview(text) {
+      // 使用 CDN 引入的 marked 对象
+      preview.innerHTML = marked.parse(text);
+    }
+  </script>
+</body>
+
+</html>

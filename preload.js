@@ -1,9 +1,11 @@
-const {ipcRenderer, contextBridge} = require("electron")
+const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('versions', {
-  node: () => process.versions.node,
-  chrome: () => process.versions.chrome,
-  electron: () => process.versions.electron,
-  // 除函数之外，我们也可以暴露变量
-  ping:()=>ipcRenderer.invoke('ping')
-})
+contextBridge.exposeInMainWorld('electronAPI', {
+  // 暴露一个 readNote 方法，调用主进程的 read-file
+  readNote: () => ipcRenderer.invoke('read-file'),
+  
+  // 暴露一个 saveNote 方法，调用主进程的 save-file
+  saveNote: (content) => ipcRenderer.send('save-file', content),
+   // --- 隐藏窗口 ---
+  hideWindow: () => ipcRenderer.send('hide-window') 
+});
