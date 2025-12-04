@@ -7,7 +7,8 @@ const DATA_PATH = path.join(app.getPath('userData'), 'notes.md');
 const STATE_PATH = path.join(app.getPath('userData'), 'window-state.json');
 let mainWindow;
 let tray;
-
+// 定义一个变量，用来标记是否正在执行退出程序的操作
+let isQuitting = false;
 function createWindow() {
    // 尝试读取上次保存的窗口状态
   let state = {};
@@ -20,13 +21,17 @@ function createWindow() {
   }
   mainWindow = new BrowserWindow({
    //如果读取到了状态，就用读取的，否则用默认值
-    width: state.width || 300,
+    width: state.width || 600,
     height: state.height || 400,
     x: state.x, // 如果 state.x 是 undefined，Electron 会自动居中
     y: state.y,
+    show: false, // 默认先不显示窗口
     frame: false, // 无边框，像个便签
+    transparent: true,   // 开启透明窗口
+    backgroundColor: '#00000000', // 防白屏闪烁，设置背景完全透明
     skipTaskbar: true, // 不在底部任务栏显示
     alwaysOnTop: true, // 既然是便签，最好置顶
+    hasShadow: false,    //关掉系统自带阴影（用CSS画更漂亮的）
     webPreferences: {
       // 开启预加载脚本，这是安全通信的桥梁
       preload: path.join(__dirname, 'preload.js'),
@@ -36,13 +41,21 @@ function createWindow() {
   });
 
   mainWindow.loadFile('index.html');
+// 生产环境看 process.argv，开发环境不用管
+  const isHiddenStart = process.argv.includes('--hidden');
+  mainWindow.once('ready-to-show', () => {
+    if (!isHiddenStart) {
+      mainWindow.show(); // 只有不是静默启动时，才把窗口弹出来
+    }
+  });
   // mainWindow.webContents.openDevTools(); // 开发时可以把这就行注释打开，方便看报错
   // 这里我们在窗口“即将关闭”或者“即将隐藏”时保存状态
   mainWindow.on('close', (e) => {
-    saveWindowState();
-    // 点击 X 是隐藏而不是退出程序
-    e.preventDefault(); 
-    mainWindow.hide();
+    if (!isQuitting) {
+    e.preventDefault(); // 阻止窗口关闭
+    mainWindow.hide();  // 只是隐藏
+    saveWindowState();  // 保存位置
+  }
   });
   
   // 监听移动结束事件，实时保存（可选，防止异常退出没保存）
@@ -104,10 +117,28 @@ app.whenReady().then(() => {
     }
   });
 
-  // 2. 创建托盘图标 (保证后台运行)
+  //  创建托盘图标 (保证后台运行)
   tray = new Tray(path.join(__dirname, 'icon.png'));
+  // 获取当前的自启动状态
+  const autoStartEnabled = app.getLoginItemSettings().openAtLogin;
   const contextMenu = Menu.buildFromTemplate([
+    { 
+      label: '开机自启动', 
+      type: 'checkbox', // 这是一个复选框
+      checked: autoStartEnabled, // 默认选中状态取决于当前设置
+      click: (item) => {
+        // 3. 当点击时，切换设置
+        const wasOpenAtLogin = item.checked;
+        app.setLoginItemSettings({
+          openAtLogin: wasOpenAtLogin,
+          path: process.execPath, // 指定启动文件的路径
+          args: [ '--hidden' ] // 添加隐藏参数
+        });
+      }
+    },
+    { type: 'separator' }, // 加个分割线好看点
     { label: '退出', click: () => {
+      isQuitting = true;
       saveWindowState(); // 退出前保存一下位置
       app.quit()
     } }
